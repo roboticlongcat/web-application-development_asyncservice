@@ -47,6 +47,7 @@ class CalculateInsulinDoseView(APIView):
         # Обрабатываем каждого пациента
         for i, patient_data in enumerate(patients_data):
             print(f"Processing patient {i + 1}/{len(patients_data)}")
+            print(f"Patient data: {patient_data}")
 
             # Валидация данных пациента
             serializer = InsulinCalculationSerializer(data=patient_data)
@@ -69,13 +70,11 @@ class CalculateInsulinDoseView(APIView):
                 data['bread_units']
             )
 
-            # Случайный результат (успех/неуспех)
-            is_success = True # random.choice([True, False])
+            is_success = True
             print(f"Calculation result: {calculated_dose:.2f} (success: {is_success})")
 
             result = {
-                'insulin_calculation_patient_id': patient_data['insulin_calculation_patient_id'],
-                'patient_id': patient_data['patient_id'],
+                'patient_id': data['patient_id'],  # Берем из валидированных данных
                 'calculated_insulin': round(calculated_dose, 2) if is_success else 0,
                 'status': 'success' if is_success else 'failed',
                 'calculation_time': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -83,6 +82,7 @@ class CalculateInsulinDoseView(APIView):
             results.append(result)
 
         print(f"=== Calculation completed. Sending {len(results)} results back ===")
+        print(f"Results: {results}")
 
         # Отправка результатов обратно в основной сервис
         response_data = {
@@ -96,20 +96,45 @@ class CalculateInsulinDoseView(APIView):
     def send_results_to_go(self, response_data):
         """Отправка результатов в Go сервис"""
         try:
-            print("Sending results to Go service...")
+            print("=== SENDING TO GO SERVICE ===")
+            print(f"Calculation ID: {response_data['insulin_calculation_id']}")
+            print(f"Number of results: {len(response_data['results'])}")
+
+            for i, result in enumerate(response_data['results']):
+                print(f"Result {i + 1}: Patient {result['patient_id']}, Insulin: {result['calculated_insulin']}")
+
+            go_service_url = "http://localhost:8080/api/insulin-calculations/result-dosages"
+
+            print(f"\nSending POST to: {go_service_url}")
+
             response = requests.post(
-                'http://localhost:8080/api/insulin-calculations/result-dosages',
+                go_service_url,
                 json=response_data,
-                headers={'Authorization': 'Bearer insulin123'},
+                headers={
+                    'Authorization': 'Bearer insulin123',
+                    'Content-Type': 'application/json'
+                },
                 timeout=10
             )
-            print(f"Go service response: {response.status_code}")
+
+            print(f"Response status: {response.status_code}")
+            print(f"Response body: {response.text}")
+
             if response.status_code == 200:
-                print("Results sent successfully!")
+                print("✅ SUCCESS: Results sent to Go service")
+                # Проверим что вернул Go
+                resp_data = response.json()
+                print(f"Go reported: {resp_data.get('updated', 0)}/{resp_data.get('total_results', 0)} updated")
             else:
-                print(f"Error from Go: {response.text}")
+                print(f"❌ ERROR from Go: {response.status_code}")
+
+        except requests.exceptions.ConnectionError as e:
+            print(f"❌ CONNECTION ERROR: {e}")
+            print("   Is Go service running on http://localhost:8080?")
         except Exception as e:
-            print(f"Error sending result back: {e}")
+            print(f"❌ UNEXPECTED ERROR: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
 
     def calculate_insulin_dose(self, current_glucose, target_glucose, sensitivity_coeff, bread_units):
         """Расчет дозы болюсного инсулина по формуле 7"""

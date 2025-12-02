@@ -2,7 +2,6 @@ from rest_framework import serializers
 
 
 class InsulinCalculationSerializer(serializers.Serializer):
-    insulin_calculation_patient_id = serializers.IntegerField(min_value=1)
     patient_id = serializers.IntegerField(min_value=1)
     current_glucose = serializers.FloatField(min_value=0)
     target_glucose = serializers.FloatField(min_value=0)
